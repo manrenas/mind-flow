@@ -32,6 +32,7 @@ export default function App() {
   const [activeMapId, setActiveMapId] = useState<string>('');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [viewport, setViewport] = useState<ViewportState>({ x: 0, y: 0, zoom: 1 });
+  const [isReady, setIsReady] = useState(false);
   
   // 2. Modals & Panels UI States
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(false);
@@ -45,9 +46,19 @@ export default function App() {
   // 3. Undo / Redo History State
   const [history, setHistory] = useState<Array<{ activeId: string; maps: MindMap[] }>>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const historyRef = useRef(history);
+  const historyIndexRef = useRef(historyIndex);
 
   // File input ref for import
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
+
+  useEffect(() => {
+    historyIndexRef.current = historyIndex;
+  }, [historyIndex]);
 
   // Active Map helper
   const activeMap = maps.find(m => m.id === activeMapId) || maps[0];
@@ -61,9 +72,9 @@ export default function App() {
         if (parsed.length > 0) {
           setMaps(parsed);
           setActiveMapId(parsed[0].id);
-          // Initialize history
           setHistory([{ activeId: parsed[0].id, maps: parsed }]);
           setHistoryIndex(0);
+          setIsReady(true);
           return;
         }
       } catch (e) {
@@ -71,13 +82,13 @@ export default function App() {
       }
     }
 
-    // Default map if empty
     const defaultMap = createDefaultMindMap();
     const initialMapsList = [defaultMap];
     setMaps(initialMapsList);
     setActiveMapId(defaultMap.id);
     setHistory([{ activeId: defaultMap.id, maps: initialMapsList }]);
     setHistoryIndex(0);
+    setIsReady(true);
   }, []);
 
   // Sync to localStorage
@@ -85,16 +96,16 @@ export default function App() {
     localStorage.setItem('mind_flow_maps', JSON.stringify(updatedMaps));
   };
 
-  // Record historical snapshots for undo/redo
+  // Record historical snapshots for undo/redo (refs avoid stale closures)
   const recordHistory = (newMapsList: MindMap[], activeId = activeMapId) => {
-    const nextHistory = history.slice(0, historyIndex + 1);
+    const idx = historyIndexRef.current;
+    const nextHistory = historyRef.current.slice(0, idx + 1);
     nextHistory.push({ activeId, maps: newMapsList });
-    
-    // Cap history length at 50 to conserve memory
+
     if (nextHistory.length > 50) {
       nextHistory.shift();
     }
-    
+
     setHistory(nextHistory);
     setHistoryIndex(nextHistory.length - 1);
   };
@@ -465,6 +476,102 @@ export default function App() {
     );
   };
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const isTypingTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      return (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        target.isContentEditable
+      );
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+
+      if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+        return;
+      }
+
+      if ((mod && e.key.toLowerCase() === 'z' && e.shiftKey) || (mod && e.key.toLowerCase() === 'y')) {
+        e.preventDefault();
+        handleRedo();
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        if (isHelpOpen) {
+          setIsHelpOpen(false);
+          return;
+        }
+        if (isEditingTextModalOpen) {
+          setIsEditingTextModalOpen(false);
+          return;
+        }
+        if (isExportDropdownOpen) {
+          setIsExportDropdownOpen(false);
+          return;
+        }
+        if (isRightPanelOpen) {
+          setIsRightPanelOpen(false);
+          setSelectedNodeId(null);
+          return;
+        }
+        if (isLeftSidebarOpen) {
+          setIsLeftSidebarOpen(false);
+          return;
+        }
+        setSelectedNodeId(null);
+        return;
+      }
+
+      if (isTypingTarget(e.target) || isEditingTextModalOpen || isHelpOpen) {
+        return;
+      }
+
+      if (e.key === 'Tab' && selectedNodeId) {
+        e.preventDefault();
+        handleAddChildNode(selectedNodeId);
+        return;
+      }
+
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNodeId) {
+        e.preventDefault();
+        handleDeleteNode(selectedNodeId);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [
+    historyIndex,
+    history,
+    selectedNodeId,
+    activeMapId,
+    maps,
+    isHelpOpen,
+    isEditingTextModalOpen,
+    isExportDropdownOpen,
+    isRightPanelOpen,
+    isLeftSidebarOpen,
+  ]);
+
+  if (!isReady || !activeMap) {
+    return (
+      <div className="flex w-screen h-screen items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-3 text-slate-500">
+          <div className="w-10 h-10 rounded-2xl bg-indigo-600 animate-pulse" />
+          <p className="text-sm font-semibold tracking-wide">A carregar Mind Flow…</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex w-screen h-screen overflow-hidden bg-slate-50 relative antialiased">
       
@@ -511,16 +618,21 @@ export default function App() {
 
             {/* Editable Map Title input */}
             <div className="min-w-0">
-              <input
-                type="text"
-                value={activeMap?.name || ''}
-                onChange={(e) => handleRenameActiveMap(e.target.value)}
-                className="font-bold text-slate-800 text-sm md:text-base bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none px-1 py-0.5 rounded transition-all max-w-[200px] md:max-w-[400px] truncate"
-                placeholder="Nome do Mapa Mental"
-                title="Clique para renomear este mapa"
-              />
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="hidden sm:inline text-[10px] font-black uppercase tracking-[0.14em] text-indigo-600 shrink-0">
+                  Mind Flow
+                </span>
+                <input
+                  type="text"
+                  value={activeMap?.name || ''}
+                  onChange={(e) => handleRenameActiveMap(e.target.value)}
+                  className="font-bold text-slate-800 text-sm md:text-base bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none px-1 py-0.5 rounded transition-all max-w-[160px] md:max-w-[360px] truncate"
+                  placeholder="Nome do Mapa Mental"
+                  title="Clique para renomear este mapa"
+                />
+              </div>
               <span className="hidden md:block text-[10px] text-slate-400 font-medium px-1 mt-0.5">
-                Salvo no Navegador
+                Guardado automaticamente neste navegador
               </span>
             </div>
           </div>
@@ -882,10 +994,21 @@ export default function App() {
 
               <div>
                 <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-1.5 text-indigo-600">
-                  Exportar e Salvar
+                  Atalhos de Teclado
+                </h4>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li><kbd className="bg-slate-100 border px-1 rounded text-xs font-mono">Ctrl/Cmd+Z</kbd> desfazer · <kbd className="bg-slate-100 border px-1 rounded text-xs font-mono">Ctrl/Cmd+Y</kbd> refazer</li>
+                  <li><kbd className="bg-slate-100 border px-1 rounded text-xs font-mono">Tab</kbd> adicionar sub-nó</li>
+                  <li><kbd className="bg-slate-100 border px-1 rounded text-xs font-mono">Delete</kbd> apagar nó · <kbd className="bg-slate-100 border px-1 rounded text-xs font-mono">Esc</kbd> fechar / desselecionar</li>
+                </ul>
+              </div>
+
+              <div>
+                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-1.5 text-indigo-600">
+                  Exportar e Guardar
                 </h4>
                 <p>
-                  Suas criações são salvas de forma automática no próprio navegador. Use o botão <strong>Exportar</strong> no topo para baixar seu mapa como Imagem de alta qualidade (PNG), Vetor editável de resolução infinita (SVG) ou arquivo de backup (JSON).
+                  As tuas criações são guardadas automaticamente no próprio navegador. Usa o botão <strong>Exportar</strong> no topo para descarregar o mapa como imagem (PNG), vetor (SVG) ou ficheiro de backup (JSON).
                 </p>
               </div>
             </div>

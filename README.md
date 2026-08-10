@@ -1,20 +1,44 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Mind Flow
 
-# Run and deploy your AI Studio app
+App web para criar e organizar mapas mentais. Os mapas ficam guardados no navegador (`localStorage`) e podes exportar em PNG, SVG ou JSON.
 
-This contains everything you need to run your app locally.
+**App em produção:** https://mind-flow-xi.vercel.app
 
-View your app in AI Studio: https://ai.studio/apps/45cf1546-a53a-4276-a864-f1cb2a2a442e
+## Correr localmente
 
-## Run Locally
+**Requisitos:** Node.js 18+
 
-**Prerequisites:**  Node.js
+```bash
+npm install
+npm run dev
+```
 
+Abre [http://localhost:3000](http://localhost:3000).
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Scripts
+
+| Comando | Descrição |
+|---------|-----------|
+| `npm run dev` | Servidor de desenvolvimento |
+| `npm run build` | Build de produção (`dist/`) |
+| `npm run preview` | Pré-visualizar o build |
+| `npm run lint` | Verificar TypeScript |
+
+## Deploy (Vercel)
+
+O projeto está configurado para a Vercel com `base: '/'`. Cada push para `main` deve republicar automaticamente.
+
+Para GitHub Pages (subpath `/mind-flow/`), faz o build com:
+
+```bash
+GITHUB_PAGES=true npm run build
+```
+
+## Atalhos de teclado
+
+- `Ctrl/Cmd + Z` — Desfazer
+- `Ctrl/Cmd + Shift + Z` ou `Ctrl + Y` — Refazer
+- `Tab` — Adicionar sub-nó ao selecionado
+- `Delete` / `Backspace` — Apagar nó selecionado (exceto a raiz)
+- `Escape` — Fechar painéis / desselecionar
+- Duplo clique num balão — Editar texto
