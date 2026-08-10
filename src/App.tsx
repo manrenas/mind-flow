@@ -1013,7 +1013,10 @@ export default function App() {
               </div>
             </div>
 
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 text-right">
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3">
+              <span className="text-[11px] text-slate-400">
+                Desenvolvido por <span className="font-semibold text-slate-600">Renato Rocha</span>
+              </span>
               <button
                 onClick={() => setIsHelpOpen(false)}
                 className="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl"
