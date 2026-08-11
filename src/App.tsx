@@ -1026,7 +1026,7 @@ export default function App() {
                   Customização Completa
                 </h4>
                 <p>
-                  Ao selecionar um balão, use a barra lateral direita para alterar o formato, estilo do texto, <strong>qualquer cor personalizada que quiser</strong> (através do seletor de cores completo) e personalizar as linhas de conexões de cada ramo.
+                  No menu do balão, toque na <strong>paleta</strong> para abrir o painel de estilo (formato, cores e linhas). No computador o painel aparece à direita; no telemóvel sobe a partir de baixo.
                 </p>
               </div>
 
