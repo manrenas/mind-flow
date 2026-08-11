@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { MindMapNode, ViewportState, DraggingState } from '../types';
-import { Plus, Trash, Edit3, Palette } from 'lucide-react';
+import { Plus, Trash, Edit3 } from 'lucide-react';
 
 interface MindMapCanvasProps {
   nodes: MindMapNode[];
@@ -142,6 +142,13 @@ export default function MindMapCanvas({
 
   // Node Dragging Handlers
   const handleNodePointerDown = (e: React.PointerEvent, node: MindMapNode) => {
+    // Action menu buttons live inside the node; don't start a drag or steal
+    // pointer capture or their click handlers will never fire.
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('.node-action-menu')) {
+      return;
+    }
+
     e.stopPropagation();
     onSelectNode(node.id);
 
@@ -153,8 +160,8 @@ export default function MindMapCanvas({
       nodeStartY: node.y,
     });
 
-    const target = e.currentTarget as HTMLElement;
-    target.setPointerCapture(e.pointerId);
+    const currentTarget = e.currentTarget as HTMLElement;
+    currentTarget.setPointerCapture(e.pointerId);
   };
 
   const handleNodePointerUp = (e: React.PointerEvent) => {
@@ -314,16 +321,31 @@ export default function MindMapCanvas({
 
                 {/* Micro Actions Menu (Hover on PC, Tap-Active when Selected) */}
                 {isSelected && (
-                  <div className="absolute -bottom-14 left-1/2 -translate-x-1/2 flex items-center bg-white border border-slate-200 shadow-xl rounded-full px-2 py-1.5 gap-1.5 pointer-events-auto z-50 animate-bounce-short">
+                  <div
+                    className="node-action-menu absolute -bottom-14 left-1/2 -translate-x-1/2 flex items-center bg-white border border-slate-200 shadow-xl rounded-full px-2 py-1.5 gap-1.5 pointer-events-auto z-50 animate-bounce-short"
+                    onPointerDown={e => {
+                      e.stopPropagation();
+                    }}
+                  >
                     <button
-                      onClick={() => onAddChildNode(node.id)}
+                      type="button"
+                      onPointerDown={e => e.stopPropagation()}
+                      onClick={e => {
+                        e.stopPropagation();
+                        onAddChildNode(node.id);
+                      }}
                       className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-full transition-colors"
                       title="Adicionar Sub-nó"
                     >
                       <Plus size={16} />
                     </button>
                     <button
-                      onClick={() => onStartEditing(node.id)}
+                      type="button"
+                      onPointerDown={e => e.stopPropagation()}
+                      onClick={e => {
+                        e.stopPropagation();
+                        onStartEditing(node.id);
+                      }}
                       className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-600 rounded-full transition-colors"
                       title="Editar Texto"
                     >
@@ -331,7 +353,12 @@ export default function MindMapCanvas({
                     </button>
                     {!isRoot && (
                       <button
-                        onClick={() => onDeleteNode(node.id)}
+                        type="button"
+                        onPointerDown={e => e.stopPropagation()}
+                        onClick={e => {
+                          e.stopPropagation();
+                          onDeleteNode(node.id);
+                        }}
                         className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-colors"
                         title="Excluir Nó"
                       >

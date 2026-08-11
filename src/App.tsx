@@ -350,9 +350,12 @@ export default function App() {
       } : m)
     );
 
-    // Select the new child and trigger text editing right away
+    // Select the new child and open the editor using the known node text.
+    // Do not look up via activeMap — React state has not re-rendered yet.
     setSelectedNodeId(newChild.id);
-    handleStartEditingText(newChild.id);
+    setEditingNodeId(newChild.id);
+    setEditingNodeText(newChild.text);
+    setIsEditingTextModalOpen(true);
   };
 
   // Delete node and its branches
