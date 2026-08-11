@@ -167,7 +167,7 @@ export default function MapsSidebar({
       {/* Footer Info */}
       <div className="p-4 border-t border-slate-800 bg-slate-950/40 text-center space-y-1">
         <span className="text-[10px] text-slate-500 font-medium tracking-wider uppercase block">
-          Mind Flow v1.0.1
+          Mind Flow v1.0.2
         </span>
         <span className="text-[11px] text-slate-400 block">
           Desenvolvido por <span className="text-slate-300 font-semibold">Renato Rocha</span>
