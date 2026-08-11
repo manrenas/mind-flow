@@ -29,23 +29,23 @@ export default function NodeDetailsPanel({
   ];
 
   return (
-    <div className="flex flex-col h-full bg-white text-slate-800 shadow-2xl border-t md:border-t-0 md:border-l border-slate-200">
+    <div className="flex flex-col h-full bg-white text-slate-800 border-t md:border-t-0 md:border-l border-slate-200">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-        <div className="flex items-center gap-2">
-          <Palette size={20} className="text-indigo-600" />
-          <h2 className="font-semibold text-slate-800">Customizar Elemento</h2>
+      <div className="flex items-center justify-between px-4 py-3 md:px-5 md:py-4 border-b border-slate-100 bg-white/90 backdrop-blur-sm">
+        <div className="flex items-center gap-2 min-w-0">
+          <Palette size={18} className="text-indigo-600 shrink-0 md:w-5 md:h-5" />
+          <h2 className="font-semibold text-slate-800 text-sm md:text-base truncate">Customizar Elemento</h2>
         </div>
         <button
           onClick={onClose}
-          className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-50 transition-colors"
+          className="text-slate-400 hover:text-slate-600 p-2 md:p-1 rounded-full hover:bg-slate-50 transition-colors active:scale-95"
         >
           ✕
         </button>
       </div>
 
       {/* Settings List */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-6">
+      <div className="flex-1 overflow-y-auto p-4 md:p-5 space-y-5 md:space-y-6 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
         {/* Title/Text Editor */}
         <div className="space-y-2">
           <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">

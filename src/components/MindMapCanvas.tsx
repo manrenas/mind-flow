@@ -54,6 +54,7 @@ export default function MindMapCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef(viewport);
   const pointerRef = useRef<ActivePointer | null>(null);
+  const pinchRef = useRef<{ startDistance: number; startZoom: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   const [isDraggingNode, setIsDraggingNode] = useState(false);
 
@@ -197,6 +198,42 @@ export default function MindMapCanvas({
     }
   };
 
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const [first, second] = [e.touches[0], e.touches[1]];
+      pinchRef.current = {
+        startDistance: Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY),
+        startZoom: viewportRef.current.zoom,
+      };
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length !== 2 || !containerRef.current || !pinchRef.current) return;
+
+    const [first, second] = [e.touches[0], e.touches[1]];
+    const rect = containerRef.current.getBoundingClientRect();
+    const midpointX = (first.clientX + second.clientX) / 2 - rect.left;
+    const midpointY = (first.clientY + second.clientY) / 2 - rect.top;
+    const currentDistance = Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY);
+    const nextZoom = Math.min(2.5, Math.max(0.4, pinchRef.current.startZoom * (currentDistance / pinchRef.current.startDistance)));
+
+    e.preventDefault();
+    setViewport(prev => {
+      const dx = midpointX - prev.x;
+      const dy = midpointY - prev.y;
+      return {
+        zoom: nextZoom,
+        x: midpointX - dx * (nextZoom / prev.zoom),
+        y: midpointY - dy * (nextZoom / prev.zoom),
+      };
+    });
+  };
+
+  const handleTouchEnd = () => {
+    pinchRef.current = null;
+  };
+
   const getConnectorPath = (parent: MindMapNode, child: MindMapNode) => {
     const px = parent.x;
     const py = parent.y;
@@ -249,8 +286,13 @@ export default function MindMapCanvas({
       onPointerMove={handlePointerMove}
       onPointerUp={endPointer}
       onPointerCancel={endPointer}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
       onWheel={handleWheel}
       id="mindmap-main-canvas"
+      style={{ touchAction: 'none' }}
     >
       <div
         className="absolute origin-top-left"

@@ -876,16 +876,18 @@ export default function App() {
 
       {/* 3. SIDEBAR: CUSTOMIZER PROPERTIES (Right drawer or panel) */}
       {isRightPanelOpen && selectedNodeId && activeMap && (
-        <div className="fixed inset-x-0 bottom-0 h-2/3 md:h-full md:relative md:inset-auto md:w-80 shrink-0 z-50 flex animate-slide-up md:animate-fade-in">
-          {/* Mobile backdrop wrapper */}
-          <div 
-            className="fixed inset-0 bg-black/40 md:hidden z-40" 
+        <div className="fixed inset-x-0 bottom-0 md:relative md:inset-auto md:w-80 shrink-0 z-50 flex animate-slide-up md:animate-fade-in">
+          <div
+            className="fixed inset-0 bg-slate-950/30 backdrop-blur-[2px] md:hidden z-40"
             onClick={() => {
               setIsRightPanelOpen(false);
               setSelectedNodeId(null);
             }}
           />
-          <div className="relative w-full h-full bg-white z-50">
+          <div className="relative z-50 w-full h-[72vh] max-h-[72vh] bg-white rounded-t-[28px] border-t border-slate-200 shadow-[0_-16px_40px_rgba(15,23,42,0.12)] overflow-hidden md:h-full md:max-h-none md:rounded-none md:border-t-0 md:border-l md:shadow-2xl">
+            <div className="flex items-center justify-center pt-3 pb-1 md:hidden">
+              <div className="h-1.5 w-12 rounded-full bg-slate-300" />
+            </div>
             {activeMap.nodes.find(n => n.id === selectedNodeId) && (
               <NodeDetailsPanel
                 node={activeMap.nodes.find(n => n.id === selectedNodeId)!}

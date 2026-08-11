@@ -93,7 +93,7 @@ export default function MapsSidebar({
       </div>
 
       {/* Maps List */}
-      <div className="flex-1 overflow-y-auto px-2 py-3 space-y-1">
+      <div className="flex-1 overflow-y-auto px-2 py-3 space-y-1 touch-pan-y">
         {filteredMaps.length === 0 ? (
           <div className="text-center py-8 text-slate-500 text-sm">
             Nenhum mapa encontrado
@@ -105,7 +105,7 @@ export default function MapsSidebar({
               <div
                 key={map.id}
                 className={`
-                  group rounded-xl p-3 flex flex-col gap-2 transition-all cursor-pointer
+                  group rounded-xl p-3 flex flex-col gap-2 transition-all cursor-pointer active:scale-[0.99]
                   ${isActive 
                     ? 'bg-slate-800 border border-indigo-500 text-white' 
                     : 'hover:bg-slate-800/40 text-slate-300 hover:text-slate-100 border border-transparent'
@@ -125,20 +125,19 @@ export default function MapsSidebar({
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-1 border-t border-slate-800/30">
-                  <div className="flex items-center gap-1 text-[10px] text-slate-400">
-                    <Calendar size={10} />
-                    <span>{formatDate(map.updatedAt)}</span>
+                <div className="flex items-center justify-between pt-1 border-t border-slate-800/30 gap-2">
+                  <div className="flex items-center gap-1 text-[10px] text-slate-400 min-w-0">
+                    <Calendar size={10} className="shrink-0" />
+                    <span className="truncate">{formatDate(map.updatedAt)}</span>
                   </div>
-                  
-                  {/* Action buttons on hover */}
-                  <div className="flex items-center gap-1.5 opacity-90 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+
+                  <div className="flex items-center gap-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         onDuplicateMap(map.id);
                       }}
-                      className="p-1 text-slate-400 hover:text-indigo-400 hover:bg-slate-700/50 rounded transition-colors"
+                      className="p-2 md:p-1 text-slate-400 hover:text-indigo-400 hover:bg-slate-700/50 rounded transition-colors"
                       title="Duplicar Mapa"
                     >
                       <Copy size={13} />
@@ -151,7 +150,7 @@ export default function MapsSidebar({
                             onDeleteMap(map.id);
                           }
                         }}
-                        className="p-1 text-slate-400 hover:text-rose-500 hover:bg-slate-700/50 rounded transition-colors"
+                        className="p-2 md:p-1 text-slate-400 hover:text-rose-500 hover:bg-slate-700/50 rounded transition-colors"
                         title="Excluir Mapa"
                       >
                         <Trash size={13} />
