@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { MindMapNode, ViewportState, DraggingState } from '../types';
-import { Plus, Trash, Edit3 } from 'lucide-react';
+import { MindMapNode, ViewportState } from '../types';
+import { Plus, Trash, Edit3, Palette } from 'lucide-react';
 
 interface MindMapCanvasProps {
   nodes: MindMapNode[];
@@ -11,9 +11,32 @@ interface MindMapCanvasProps {
   onAddChildNode: (parentId: string) => void;
   onDeleteNode: (nodeId: string) => void;
   onStartEditing: (nodeId: string) => void;
+  onOpenStylePanel: (nodeId: string) => void;
   setViewport: React.Dispatch<React.SetStateAction<ViewportState>>;
   lineType: 'curved' | 'straight' | 'orthogonal';
 }
+
+const DRAG_THRESHOLD_PX = 5;
+
+type ActivePointer =
+  | {
+      kind: 'pan';
+      pointerId: number;
+      startX: number;
+      startY: number;
+      viewportX: number;
+      viewportY: number;
+    }
+  | {
+      kind: 'node';
+      pointerId: number;
+      nodeId: string;
+      startX: number;
+      startY: number;
+      nodeStartX: number;
+      nodeStartY: number;
+      dragging: boolean;
+    };
 
 export default function MindMapCanvas({
   nodes,
@@ -24,16 +47,19 @@ export default function MindMapCanvas({
   onAddChildNode,
   onDeleteNode,
   onStartEditing,
+  onOpenStylePanel,
   setViewport,
   lineType,
 }: MindMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef(viewport);
+  const pointerRef = useRef<ActivePointer | null>(null);
   const [isPanning, setIsPanning] = useState(false);
-  const panStartRef = useRef({ x: 0, y: 0, viewportX: 0, viewportY: 0 });
-  const [draggingNode, setDraggingNode] = useState<DraggingState | null>(null);
+  const [isDraggingNode, setIsDraggingNode] = useState(false);
 
-  // Find selected node
-  const selectedNode = nodes.find(n => n.id === selectedNodeId);
+  useEffect(() => {
+    viewportRef.current = viewport;
+  }, [viewport]);
 
   // Center canvas on first load
   useEffect(() => {
@@ -47,103 +73,57 @@ export default function MindMapCanvas({
     }
   }, [setViewport]);
 
-  // Handle zooming with mouse wheel
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const zoomFactor = 1.1;
-    let nextZoom = viewport.zoom;
-    
+    const current = viewportRef.current;
+    let nextZoom = current.zoom;
+
     if (e.deltaY < 0) {
-      nextZoom = Math.min(2.5, viewport.zoom * zoomFactor);
+      nextZoom = Math.min(2.5, current.zoom * zoomFactor);
     } else {
-      nextZoom = Math.max(0.4, viewport.zoom / zoomFactor);
+      nextZoom = Math.max(0.4, current.zoom / zoomFactor);
     }
 
-    if (containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
+    if (!containerRef.current) return;
 
-      // Adjust panning so that the point under the mouse cursor remains static while zooming
-      setViewport(prev => {
-        const dx = mouseX - prev.x;
-        const dy = mouseY - prev.y;
-        return {
-          zoom: nextZoom,
-          x: mouseX - dx * (nextZoom / prev.zoom),
-          y: mouseY - dy * (nextZoom / prev.zoom),
-        };
-      });
-    }
+    const rect = containerRef.current.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    setViewport(prev => {
+      const dx = mouseX - prev.x;
+      const dy = mouseY - prev.y;
+      return {
+        zoom: nextZoom,
+        x: mouseX - dx * (nextZoom / prev.zoom),
+        y: mouseY - dy * (nextZoom / prev.zoom),
+      };
+    });
   };
 
-  // Canvas Panning Handlers
   const handleCanvasPointerDown = (e: React.PointerEvent) => {
-    // If clicking directly on a node or custom control button, don't pan the canvas
     const target = e.target as HTMLElement;
-    if (target.closest('.mind-map-node') || target.closest('button')) {
+    if (target.closest('.mind-map-node') || target.closest('button') || target.closest('.node-action-menu')) {
       return;
     }
 
-    setIsPanning(true);
-    panStartRef.current = {
-      x: e.clientX,
-      y: e.clientY,
-      viewportX: viewport.x,
-      viewportY: viewport.y,
+    // Deselect when tapping empty canvas
+    onSelectNode(null);
+
+    pointerRef.current = {
+      kind: 'pan',
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      viewportX: viewportRef.current.x,
+      viewportY: viewportRef.current.y,
     };
-    
-    // Set pointer capture to track drag outside container
-    target.setPointerCapture(e.pointerId);
+    setIsPanning(true);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
 
-  const handleCanvasPointerMove = (e: React.PointerEvent) => {
-    if (draggingNode) {
-      e.stopPropagation();
-      // Calculate delta of movement in scaled space
-      const dx = (e.clientX - draggingNode.startX) / viewport.zoom;
-      const dy = (e.clientY - draggingNode.startY) / viewport.zoom;
-      
-      onUpdateNodePosition(
-        draggingNode.nodeId,
-        draggingNode.nodeStartX + dx,
-        draggingNode.nodeStartY + dy
-      );
-      return;
-    }
-
-    if (!isPanning) return;
-
-    const dx = e.clientX - panStartRef.current.x;
-    const dy = e.clientY - panStartRef.current.y;
-
-    setViewport(prev => ({
-      ...prev,
-      x: panStartRef.current.viewportX + dx,
-      y: panStartRef.current.viewportY + dy,
-    }));
-  };
-
-  const handleCanvasPointerUp = (e: React.PointerEvent) => {
-    if (isPanning) {
-      setIsPanning(false);
-      const target = e.target as HTMLElement;
-      try {
-        target.releasePointerCapture(e.pointerId);
-      } catch (err) {
-        // Safe check for browser release capture support
-      }
-    }
-    
-    if (draggingNode) {
-      setDraggingNode(null);
-    }
-  };
-
-  // Node Dragging Handlers
   const handleNodePointerDown = (e: React.PointerEvent, node: MindMapNode) => {
-    // Action menu buttons live inside the node; don't start a drag or steal
-    // pointer capture or their click handlers will never fire.
     const target = e.target as HTMLElement;
     if (target.closest('button') || target.closest('.node-action-menu')) {
       return;
@@ -152,32 +132,71 @@ export default function MindMapCanvas({
     e.stopPropagation();
     onSelectNode(node.id);
 
-    setDraggingNode({
+    pointerRef.current = {
+      kind: 'node',
+      pointerId: e.pointerId,
       nodeId: node.id,
       startX: e.clientX,
       startY: e.clientY,
       nodeStartX: node.x,
       nodeStartY: node.y,
-    });
+      dragging: false,
+    };
 
-    const currentTarget = e.currentTarget as HTMLElement;
-    currentTarget.setPointerCapture(e.pointerId);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
 
-  const handleNodePointerUp = (e: React.PointerEvent) => {
-    e.stopPropagation();
-    if (draggingNode) {
-      setDraggingNode(null);
+  const handlePointerMove = (e: React.PointerEvent) => {
+    const active = pointerRef.current;
+    if (!active || active.pointerId !== e.pointerId) return;
+
+    if (active.kind === 'pan') {
+      const dx = e.clientX - active.startX;
+      const dy = e.clientY - active.startY;
+      setViewport(prev => ({
+        ...prev,
+        x: active.viewportX + dx,
+        y: active.viewportY + dy,
+      }));
+      return;
     }
-    const target = e.currentTarget as HTMLElement;
+
+    const dxScreen = e.clientX - active.startX;
+    const dyScreen = e.clientY - active.startY;
+    const distance = Math.hypot(dxScreen, dyScreen);
+
+    if (!active.dragging && distance < DRAG_THRESHOLD_PX) {
+      return;
+    }
+
+    if (!active.dragging) {
+      active.dragging = true;
+      setIsDraggingNode(true);
+    }
+
+    const zoom = viewportRef.current.zoom || 1;
+    onUpdateNodePosition(
+      active.nodeId,
+      active.nodeStartX + dxScreen / zoom,
+      active.nodeStartY + dyScreen / zoom
+    );
+  };
+
+  const endPointer = (e: React.PointerEvent) => {
+    const active = pointerRef.current;
+    if (!active || active.pointerId !== e.pointerId) return;
+
+    pointerRef.current = null;
+    setIsPanning(false);
+    setIsDraggingNode(false);
+
     try {
-      target.releasePointerCapture(e.pointerId);
-    } catch (err) {
-      // Safe check
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // Pointer may already be released
     }
   };
 
-  // Generate SVG Path for connections
   const getConnectorPath = (parent: MindMapNode, child: MindMapNode) => {
     const px = parent.x;
     const py = parent.y;
@@ -193,15 +212,13 @@ export default function MindMapCanvas({
       return `M ${px} ${py} H ${midX} V ${cy} H ${cx}`;
     }
 
-    // Default: 'curved' (beautiful cubic bezier)
     const controlOffset = Math.min(Math.abs(cx - px) * 0.5, 120);
     const pControlX = px + (cx > px ? controlOffset : -controlOffset);
     const cControlX = cx - (cx > px ? controlOffset : -controlOffset);
-    
+
     return `M ${px} ${py} C ${pControlX} ${py}, ${cControlX} ${cy}, ${cx} ${cy}`;
   };
 
-  // Node Shape CSS Selector
   const getNodeShapeClass = (shape: string) => {
     switch (shape) {
       case 'circle':
@@ -218,19 +235,25 @@ export default function MindMapCanvas({
     }
   };
 
+  const stopMenuPointer = (e: React.SyntheticEvent) => {
+    e.stopPropagation();
+  };
+
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-full overflow-hidden select-none touch-none bg-[#fafafa] grid-bg-dots cursor-grab active:cursor-grabbing"
+      className={`relative w-full h-full overflow-hidden select-none touch-none bg-[#fafafa] grid-bg-dots ${
+        isPanning || isDraggingNode ? 'cursor-grabbing' : 'cursor-grab'
+      }`}
       onPointerDown={handleCanvasPointerDown}
-      onPointerMove={handleCanvasPointerMove}
-      onPointerUp={handleCanvasPointerUp}
+      onPointerMove={handlePointerMove}
+      onPointerUp={endPointer}
+      onPointerCancel={endPointer}
       onWheel={handleWheel}
       id="mindmap-main-canvas"
     >
-      {/* Infinite scale & translate layer */}
       <div
-        className="absolute origin-center transition-transform duration-75 ease-out"
+        className="absolute origin-top-left"
         style={{
           transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
           width: 0,
@@ -239,21 +262,7 @@ export default function MindMapCanvas({
           top: 0,
         }}
       >
-        {/* SVG connection lines layer */}
         <svg className="absolute overflow-visible pointer-events-none" style={{ left: 0, top: 0 }}>
-          <defs>
-            <marker
-              id="arrow"
-              viewBox="0 0 10 10"
-              refX="6"
-              refY="5"
-              markerWidth="6"
-              markerHeight="6"
-              orient="auto-start-reverse"
-            >
-              <path d="M 0 1 L 10 5 L 0 9 z" fill="#94a3b8" />
-            </marker>
-          </defs>
           {nodes.map(node => {
             if (node.parentId === null) return null;
             const parent = nodes.find(n => n.id === node.parentId);
@@ -273,13 +282,11 @@ export default function MindMapCanvas({
                     ? '2,4'
                     : 'none'
                 }
-                className="transition-all duration-300"
               />
             );
           })}
         </svg>
 
-        {/* HTML nodes layer */}
         {nodes.map(node => {
           const isSelected = node.id === selectedNodeId;
           const isRoot = node.parentId === null;
@@ -287,7 +294,7 @@ export default function MindMapCanvas({
           return (
             <div
               key={node.id}
-              className="absolute mind-map-node select-none group"
+              className="absolute mind-map-node select-none"
               style={{
                 left: node.x,
                 top: node.y,
@@ -295,14 +302,15 @@ export default function MindMapCanvas({
                 zIndex: isSelected ? 50 : 10,
               }}
             >
-              {/* Node Card */}
               <div
                 onPointerDown={e => handleNodePointerDown(e, node)}
-                onPointerUp={handleNodePointerUp}
-                onDoubleClick={() => onStartEditing(node.id)}
+                onDoubleClick={e => {
+                  e.stopPropagation();
+                  onStartEditing(node.id);
+                }}
                 className={`
                   ${getNodeShapeClass(node.shape)}
-                  shadow-md transition-all duration-200 border-2 text-center select-none cursor-pointer flex flex-col justify-center items-center relative
+                  shadow-md border-2 text-center select-none cursor-pointer flex flex-col justify-center items-center relative
                   ${isSelected ? 'scale-105 selected-node-pulse border-blue-500' : 'hover:shadow-lg'}
                 `}
                 style={{
@@ -318,56 +326,71 @@ export default function MindMapCanvas({
                 <span className="break-words max-w-[200px] pointer-events-none line-clamp-3">
                   {node.text}
                 </span>
-
-                {/* Micro Actions Menu (Hover on PC, Tap-Active when Selected) */}
-                {isSelected && (
-                  <div
-                    className="node-action-menu absolute -bottom-14 left-1/2 -translate-x-1/2 flex items-center bg-white border border-slate-200 shadow-xl rounded-full px-2 py-1.5 gap-1.5 pointer-events-auto z-50 animate-bounce-short"
-                    onPointerDown={e => {
-                      e.stopPropagation();
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onPointerDown={e => e.stopPropagation()}
-                      onClick={e => {
-                        e.stopPropagation();
-                        onAddChildNode(node.id);
-                      }}
-                      className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-full transition-colors"
-                      title="Adicionar Sub-nó"
-                    >
-                      <Plus size={16} />
-                    </button>
-                    <button
-                      type="button"
-                      onPointerDown={e => e.stopPropagation()}
-                      onClick={e => {
-                        e.stopPropagation();
-                        onStartEditing(node.id);
-                      }}
-                      className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-600 rounded-full transition-colors"
-                      title="Editar Texto"
-                    >
-                      <Edit3 size={16} />
-                    </button>
-                    {!isRoot && (
-                      <button
-                        type="button"
-                        onPointerDown={e => e.stopPropagation()}
-                        onClick={e => {
-                          e.stopPropagation();
-                          onDeleteNode(node.id);
-                        }}
-                        className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-colors"
-                        title="Excluir Nó"
-                      >
-                        <Trash size={16} />
-                      </button>
-                    )}
-                  </div>
-                )}
               </div>
+
+              {/* Menu is a sibling of the drag target so it never inherits pointer capture */}
+              {isSelected && (
+                <div
+                  className="node-action-menu absolute left-1/2 top-full mt-3 -translate-x-1/2 flex items-center bg-white border border-slate-200 shadow-xl rounded-full px-2 py-1.5 gap-1.5 z-50"
+                  onPointerDown={stopMenuPointer}
+                  onPointerUp={stopMenuPointer}
+                >
+                  <button
+                    type="button"
+                    onPointerDown={stopMenuPointer}
+                    onClick={e => {
+                      e.stopPropagation();
+                      onAddChildNode(node.id);
+                    }}
+                    className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-full transition-colors"
+                    title="Adicionar Sub-nó"
+                    aria-label="Adicionar Sub-nó"
+                  >
+                    <Plus size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onPointerDown={stopMenuPointer}
+                    onClick={e => {
+                      e.stopPropagation();
+                      onStartEditing(node.id);
+                    }}
+                    className="p-2 bg-amber-50 hover:bg-amber-100 text-amber-600 rounded-full transition-colors"
+                    title="Editar Texto"
+                    aria-label="Editar Texto"
+                  >
+                    <Edit3 size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onPointerDown={stopMenuPointer}
+                    onClick={e => {
+                      e.stopPropagation();
+                      onOpenStylePanel(node.id);
+                    }}
+                    className="p-2 bg-violet-50 hover:bg-violet-100 text-violet-600 rounded-full transition-colors"
+                    title="Estilo do Balão"
+                    aria-label="Estilo do Balão"
+                  >
+                    <Palette size={16} />
+                  </button>
+                  {!isRoot && (
+                    <button
+                      type="button"
+                      onPointerDown={stopMenuPointer}
+                      onClick={e => {
+                        e.stopPropagation();
+                        onDeleteNode(node.id);
+                      }}
+                      className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-colors"
+                      title="Excluir Nó"
+                      aria-label="Excluir Nó"
+                    >
+                      <Trash size={16} />
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}

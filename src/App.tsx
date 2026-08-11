@@ -48,6 +48,8 @@ export default function App() {
   const [historyIndex, setHistoryIndex] = useState(-1);
   const historyRef = useRef(history);
   const historyIndexRef = useRef(historyIndex);
+  const activeMapIdRef = useRef(activeMapId);
+  const mapsRef = useRef(maps);
 
   // File input ref for import
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -59,6 +61,14 @@ export default function App() {
   useEffect(() => {
     historyIndexRef.current = historyIndex;
   }, [historyIndex]);
+
+  useEffect(() => {
+    activeMapIdRef.current = activeMapId;
+  }, [activeMapId]);
+
+  useEffect(() => {
+    mapsRef.current = maps;
+  }, [maps]);
 
   // Active Map helper
   const activeMap = maps.find(m => m.id === activeMapId) || maps[0];
@@ -93,11 +103,15 @@ export default function App() {
 
   // Sync to localStorage
   const saveToStorage = (updatedMaps: MindMap[]) => {
-    localStorage.setItem('mind_flow_maps', JSON.stringify(updatedMaps));
+    try {
+      localStorage.setItem('mind_flow_maps', JSON.stringify(updatedMaps));
+    } catch (e) {
+      console.error('Failed saving mindmaps to localStorage', e);
+    }
   };
 
   // Record historical snapshots for undo/redo (refs avoid stale closures)
-  const recordHistory = (newMapsList: MindMap[], activeId = activeMapId) => {
+  const recordHistory = (newMapsList: MindMap[], activeId = activeMapIdRef.current) => {
     const idx = historyIndexRef.current;
     const nextHistory = historyRef.current.slice(0, idx + 1);
     nextHistory.push({ activeId, maps: newMapsList });
@@ -106,6 +120,8 @@ export default function App() {
       nextHistory.shift();
     }
 
+    historyRef.current = nextHistory;
+    historyIndexRef.current = nextHistory.length - 1;
     setHistory(nextHistory);
     setHistoryIndex(nextHistory.length - 1);
   };
@@ -116,9 +132,11 @@ export default function App() {
       const prevIdx = historyIndex - 1;
       const snapshot = history[prevIdx];
       setHistoryIndex(prevIdx);
+      historyIndexRef.current = prevIdx;
       setMaps(snapshot.maps);
       setActiveMapId(snapshot.activeId);
       setSelectedNodeId(null);
+      setIsRightPanelOpen(false);
       saveToStorage(snapshot.maps);
     }
   };
@@ -129,20 +147,24 @@ export default function App() {
       const nextIdx = historyIndex + 1;
       const snapshot = history[nextIdx];
       setHistoryIndex(nextIdx);
+      historyIndexRef.current = nextIdx;
       setMaps(snapshot.maps);
       setActiveMapId(snapshot.activeId);
       setSelectedNodeId(null);
+      setIsRightPanelOpen(false);
       saveToStorage(snapshot.maps);
     }
   };
 
-  // Update complete maps state
+  // Update complete maps state — never call other setStates inside the maps updater
   const updateMapsState = (updater: (prev: MindMap[]) => MindMap[], recordSnapshot = true) => {
     setMaps(prev => {
       const updated = updater(prev);
+      mapsRef.current = updated; // keep ref in sync for rapid successive edits
       saveToStorage(updated);
       if (recordSnapshot) {
-        recordHistory(updated);
+        // Defer history write so it is not a nested setState side-effect
+        queueMicrotask(() => recordHistory(updated));
       }
       return updated;
     });
@@ -295,19 +317,16 @@ export default function App() {
 
   // Add child node
   const handleAddChildNode = (parentId: string) => {
-    const parentNode = activeMap?.nodes.find(n => n.id === parentId);
+    const mapId = activeMapIdRef.current;
+    const currentMap = mapsRef.current.find(m => m.id === mapId);
+    if (!currentMap) return;
+
+    const parentNode = currentMap.nodes.find(n => n.id === parentId);
     if (!parentNode) return;
 
-    // Offset child node position
-    const offsetDistanceX = 180;
-    const offsetDistanceY = (Math.random() - 0.5) * 100;
-    
-    // Decide side (left or right of parent or screen based on hierarchy)
+    const existingChildren = currentMap.nodes.filter(n => n.parentId === parentId);
     const direction = parentNode.x >= 0 ? 1 : -1;
-    const childX = parentNode.x + (offsetDistanceX * direction);
-    const childY = parentNode.y + offsetDistanceY;
 
-    // Generate nice child color automatically based on parent color or default presets
     const parentColorKey = Object.keys(COLORS).find(
       k => COLORS[k as keyof typeof COLORS].bg === parentNode.color
     );
@@ -316,7 +335,6 @@ export default function App() {
     let childBorder = '#DBEAFE';
 
     if (parentColorKey) {
-      // Pick a pastel light version of the same color family
       const lightKey = `${parentColorKey}Light` as keyof typeof COLORS;
       if (COLORS[lightKey]) {
         childBg = COLORS[lightKey].bg;
@@ -326,10 +344,10 @@ export default function App() {
     }
 
     const newChild: MindMapNode = {
-      id: `node-${Date.now()}`,
+      id: `node-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       text: 'Novo Tópico',
-      x: Math.round(childX),
-      y: Math.round(childY),
+      x: Math.round(parentNode.x + 180 * direction),
+      y: Math.round(parentNode.y + existingChildren.length * 64),
       parentId,
       color: childBg,
       textColor: childText,
@@ -342,16 +360,20 @@ export default function App() {
       lineWidth: 2,
     };
 
-    updateMapsState(prev => 
-      prev.map(m => m.id === activeMapId ? {
-        ...m,
-        updatedAt: new Date().toISOString(),
-        nodes: [...m.nodes, newChild]
-      } : m)
+    updateMapsState(prev =>
+      prev.map(m =>
+        m.id === mapId
+          ? {
+              ...m,
+              updatedAt: new Date().toISOString(),
+              nodes: [...m.nodes, newChild],
+            }
+          : m
+      )
     );
 
-    // Select the new child and open the editor using the known node text.
-    // Do not look up via activeMap — React state has not re-rendered yet.
+    // Keep style panel closed so the new balloon (and its menu) stay reachable on mobile
+    setIsRightPanelOpen(false);
     setSelectedNodeId(newChild.id);
     setEditingNodeId(newChild.id);
     setEditingNodeText(newChild.text);
@@ -360,25 +382,30 @@ export default function App() {
 
   // Delete node and its branches
   const handleDeleteNode = (nodeId: string) => {
-    if (!activeMap) return;
-    const nodeToDelete = activeMap.nodes.find(n => n.id === nodeId);
-    if (!nodeToDelete || nodeToDelete.parentId === null) return; // cannot delete root node
+    const mapId = activeMapIdRef.current;
+    const currentMap = mapsRef.current.find(m => m.id === mapId);
+    if (!currentMap) return;
 
-    const descendants = getDescendantIds(nodeId, activeMap.nodes);
-    const idsToRemove = [nodeId, ...descendants];
+    const nodeToDelete = currentMap.nodes.find(n => n.id === nodeId);
+    if (!nodeToDelete || nodeToDelete.parentId === null) return; // cannot delete root
 
-    updateMapsState(prev => 
-      prev.map(m => m.id === activeMapId ? {
-        ...m,
-        updatedAt: new Date().toISOString(),
-        nodes: m.nodes.filter(n => !idsToRemove.includes(n.id))
-      } : m)
+    const descendants = getDescendantIds(nodeId, currentMap.nodes);
+    const idsToRemove = new Set([nodeId, ...descendants]);
+
+    updateMapsState(prev =>
+      prev.map(m =>
+        m.id === mapId
+          ? {
+              ...m,
+              updatedAt: new Date().toISOString(),
+              nodes: m.nodes.filter(n => !idsToRemove.has(n.id)),
+            }
+          : m
+      )
     );
 
-    if (selectedNodeId && idsToRemove.includes(selectedNodeId)) {
-      setSelectedNodeId(null);
-      setIsRightPanelOpen(false);
-    }
+    setSelectedNodeId(prev => (prev && idsToRemove.has(prev) ? null : prev));
+    setIsRightPanelOpen(false);
   };
 
   // Start double-click rename flow
@@ -764,12 +791,20 @@ export default function App() {
               viewport={viewport}
               onSelectNode={(nodeId) => {
                 setSelectedNodeId(nodeId);
-                setIsRightPanelOpen(nodeId !== null);
+                // Do NOT auto-open the style panel: on mobile it covers the canvas
+                // and blocks the floating +/-/delete menu.
+                if (nodeId === null) {
+                  setIsRightPanelOpen(false);
+                }
               }}
               onUpdateNodePosition={handleUpdateNodePosition}
               onAddChildNode={handleAddChildNode}
               onDeleteNode={handleDeleteNode}
               onStartEditing={handleStartEditingText}
+              onOpenStylePanel={(nodeId) => {
+                setSelectedNodeId(nodeId);
+                setIsRightPanelOpen(true);
+              }}
               setViewport={setViewport}
               lineType={activeMap.lineType}
             />
@@ -981,7 +1016,7 @@ export default function App() {
                 </h4>
                 <ul className="list-disc pl-5 space-y-1">
                   <li>Toque em um balão para selecioná-lo.</li>
-                  <li>Use o menu flutuante abaixo do balão ou o botão de <strong>+</strong> para criar um sub-nó.</li>
+                  <li>Use o menu flutuante abaixo do balão (<strong>+</strong>, lápis, paleta ou lixo) para criar, editar, estilizar ou apagar.</li>
                   <li>Toque duas vezes em qualquer balão para alterar seu texto e escolher emojis.</li>
                 </ul>
               </div>
